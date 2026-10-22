@@ -73,7 +73,7 @@ macro "Mouse Behavioral Analysis Menu Tool - C000C111D98C111D88C111D89C111D86D99
  		
  }
  
- /*Batch mode for processing AVI files that Fiji can�t open into AVI files that it can open
+ /*Batch mode for processing AVI files that Fiji can t open into AVI files that it can open
  opening then and saving them as tif files. this requires space and time as each frame becomes a
  tiff image so a 100Mb AVi file turns into a 3.5Gb Tiff stack
  It requires FFMPEG.EXE in the toolset folder
@@ -141,7 +141,7 @@ macro "Mouse Behavioral Analysis Menu Tool - C000C111D98C111D88C111D89C111D86D99
 	
 }
  
- /*Convert AVI file that Fiji can�t open into AVI files that it can open
+ /*Convert AVI file that Fiji can t open into AVI files that it can open
  opening then and saving it as tif files. This requires space and time as each frame becomes a
  tiff image so a 10Mb AVi file turns into a 3.5Gb Tiff stack
  It requires FFMPEG.EXE in the toolset folder
@@ -464,7 +464,8 @@ function ProcessVideo(){
 		setBatchMode("show");
 	}
 	
-	//Save tiff stack	
+	
+//Save tiff stack	
 	setMetadata("Info", "Frame rate: " + fpsNN + " fps");
 	saveAs("tiff", dir+name +".converted.tif");
 	
@@ -1910,167 +1911,179 @@ function getQuadAndPlat(dir, imTitle, diameter){
 }
 
 /*
- Function for NovelObject analysis. Its main job its to determine when/howmuch the mouse approaches
- each region. It also outputs several parameters related to displacement, velocity, etc.
- including direction of head. These are trial parameters.
+ Function for NovelObject analysis.
+ Its main job its to determine when/howmuch the mouse approaches each region.
+ It also outputs several parameters related to displacement, velocity, etc. including direction of head.
+ These are trial parameters.
  */
 function MouseRegionsTracker(){
 
-	checkAndSort();
-	
-	//Select the directory of the open image to be analysed
-	dir = getDirectory("image");
-	imTitle = getTitle();
-	rectCoord = newArray(4);
-	 //Clear measurements selection and limit them to threshold
-	run("Set Measurements...", "limit redirect=None decimal=3");
+    // 定义数组
+    rectCoord = newArray(4); 
+    
+    checkAndSort();
 
-	//Get the parameters of the Dialog1
-	choiceArray = dialog1(4);
-	blaWhi = choiceArray[0];
-	fps = choiceArray[1];
-	cubeW = choiceArray[2];
-	cubeH = choiceArray[3];
-	nRegions = choiceArray[4];
-	darkR = choiceArray[5];
-	gaus = choiceArray[6];
-	stagger = choiceArray[7];
+    //Select the directory of the open image to be analysed
+    dir = getDirectory("image");
+    imTitle = getTitle();
+    
+    //Clear measurements selection and limit them to threshold
+    run("Set Measurements...", "limit redirect=None decimal=3");
+    
+    //Parameters from Dialog1 (option = 4)
+    temp = dialog1(4);
+    blaWhi = temp[0];
+    fps = temp[1];
+    boxW = temp[2];
+    boxH = temp[3];
+    nRegions = temp[4];
+    darkR = temp[5];
+    gaus = temp[6];
+    stagger = temp[7];
+    
+    /* Takes care of cases where an analysis file exists already */
+    if(File.exists(dir + imTitle + ".objects.trac")){
+        showMessageWithCancel(delFile);
+        File.delete(dir + imTitle + ".objects.trac");        
+    }
+    
+    /* --- 1. OPEN FILE --- */
+    f = File.open(dir + imTitle + ".objects.trac");
+    print(f, dir + "\t" + getWidth() + "\t" +  getHeight() + "\t" + nSlices() +"\t"+ gaus); 
+    print(f, imTitle);
+    print(f, "FPS\t" + fps);
 
-	 /* Takes care of cases where an analysis file exists already
-	asks if you want to delete it or not */
-	if(File.exists(dir + imTitle + ".objects.trac")){
-		showMessageWithCancel(delFile);
-		File.delete(dir + imTitle + ".objects.trac");		
-	}
-	
-	/*Create a new Analysis file. It is very important not to change the order that
-	instructions get writen to this file as that will screw up the function
-	to redo previous analysis*/
-	f = File.open(dir + imTitle + ".objects.trac");
-	print(f, dir + "\t" + getWidth + "\t" + getHeight + "\t" + nSlices + "\t" + gaus);
-	print(f, imTitle);
-	print(f, "FPS\t" + fps);
+    //Run gaussian blur
+    if(gaus > 0){
+        setBatchMode("hide");
+        run("Gaussian Blur...", "sigma="+gaus+" stack");
+    }
+    setBatchMode("show");
+    
+    // --- 2. ARENA SETUP (RECTANGLE ONLY) ---
+    roiManager("Reset");
+    
+    if(selectionType() < 0){ 
+        setTool("rectangle");
+        waitForUser("Arena Setup", "Please use the RECTANGLE tool to draw the arena boundary and click OK.");
+    }
+    
+    // Get Arena Coordinates
+    getSelectionBounds(x, y, w, h);
+    rectCoord[0] = x; rectCoord[1] = y; rectCoord[2] = w; rectCoord[3] = h;
+    
+    // WRITE BoxDimensions
+    print(f,"BoxDimensions\t"+rectCoord[0]+"\t"+rectCoord[1]+"\t"+ rectCoord[2]+"\t"+rectCoord[3]);    
 
-	//Run gaussian blur if so selected in Dialog1
-	if(gaus > 0){
-		setBatchMode("hide");
-		run("Gaussian Blur...", "sigma="+gaus+" stack");
-	}
-	setBatchMode("show");
+    // Calculate Center Region
+    boundx = rectCoord[0] + (rectCoord[2]/5);
+    boundy = rectCoord[1] + (rectCoord[3]/5);
+    boundx2 = (rectCoord[2]/5)*3; 
+    boundy2 = (rectCoord[3]/5)*3; 
+    
+    // WRITE Region
+    print(f,"Region\t"+boundx+"\t"+boundy+"\t"+boundx2+"\t"+boundy2);    
+    
+    // --- 3. ARENA CLEANUP ---
+    setBatchMode("hide");
+    getPixelSize(unit, pw, ph);
+    
+    if(!blaWhi) setBackgroundColor(255, 255, 255);
+    else setBackgroundColor(0, 0, 0);
 
-	//Draw a rectangle for the user to adjust to the base of the box
-	getDimensions(width, height, channels, slices, frames);
-	makeRectangle(width/5, height/5,width/2,height/2);
-	waitForUser("Please adjust the rectangle to match the bottom of the box");
-	
-	//Gets the dimensions of the rectangle and prints them to a file
-	getSelectionBounds(rectCoord[0], rectCoord[1], rectCoord[2], rectCoord[3]);
-	print(f,"BoxDimensions\t"+rectCoord[0]+"\t"+rectCoord[1]+"\t"+ rectCoord[2]+"\t"+rectCoord[3]);	
+    // Clear outside Arena
+    run("Enlarge...", "enlarge=15 pixel");
+    run("Clear Outside", "stack"); 
+    run("Select None"); 
+    
+    setBatchMode("show");
 
-	//Determines the center region and prints it to file
-	boundx = rectCoord[0] + (rectCoord[2]/5);
-	boundy = rectCoord[1] + (rectCoord[3]/5);
-	boundx2 = (rectCoord[2]/5)*3;
-	boundy2 = (rectCoord[3]/5)*3;
-	print(f,"Region\t"+boundx+"\t"+boundy+"\t"+boundx2+"\t"+boundy2);	
+    // WRITE Pixel Size (Line 5 in TRAC file - Critical for indexing)
+    if(pw == 1 && ph == 1){
+        px = boxW/getWidth(); 
+        py = boxH/getHeight();
+        print(f, "Pixel size\t"+px+"\t"+py);
+        run("Properties...", "channels=1 slices="+nSlices+" frames=1 unit="+units+" pixel_width="+px+" pixel_height="+py+" voxel_depth=1");    
+    }else{
+        print(f, "Pixel size\t"+pw+"\t"+ph);
+    }
 
-	setBatchMode("hide");	
-	getPixelSize(unit, pw, ph);
-	/*Removed this VS reference to make my life easier*/
-	/*if(is("Virtual Stack")){
-		close();
-		sortVirtual(dir, rectCoord, 1);
-	}else{*/
-		
-	//Changes the backgrnd color to match black or white mice
-	if(!blaWhi)
-		setBackgroundColor(255, 255, 255);
-	else
-		setBackgroundColor(0, 0, 0);
+    // --- 4. OBJECT ROI SETUP ---
+    // 确保 ROI Manager 是空的
+    roiManager("Reset");
+    
+    Dialog.create("Object ROI Setup");
+    Dialog.addMessage("STEP 2: OBJECT ROI SETUP\nYou will draw " + nRegions + " object regions.\nUse the RECTANGLE tool to draw each object boundary.");
+    Dialog.addMessage("DO NOT press 't'. Just draw and click OK.");
+    Dialog.show();
+    
+    for (i = 1; i <= nRegions; i++){
+        setTool("rectangle");
+        waitForUser("Draw Object " + i + " (Rectangle). Then click OK.");
+        
+        // 获取当前绘制的矩形坐标
+        getSelectionBounds(rx, ry, rw, rh);
+        // 立即写入文件 (Line 6+)
+        print(f,"Object"+i+"\t"+rx+"\t"+ry+"\t"+ rw+"\t"+rh);
+        
+        // CRITICAL: 不要把物体添加到 ROI Manager，或者添加后立即删除！
+        // 原始逻辑是不添加的，这里我们只获取坐标写入文件即可。
+        run("Select None");
+    }
+    
+    // --- 5. THRESHOLD & ANALYSIS ---
 
-	run("Enlarge...", "enlarge=15 pixel");
-	run("Clear Outside", "stack");
-	
-	//Changes the backgrnd color to match black or white mice
-	/*run("Enlarge...", "enlarge=-15 pixel");
-	run("Make Band...", "band="+ 25*pw);
-	run("Gaussian Blur...", "sigma=10 stack");	*/
- 
-	setBatchMode("show");
-	/*Checks if the pixel size is set and if not sets it from the 
-dimensions of the cube*/
-	if(pw == 1 && ph == 1){
-		px = cubeW/rectCoord[2]; py = cubeH/rectCoord[3];
-		print(f, "Pixel size\t"+px+"\t"+py);	
-		run("Properties...", "channels=1 slices="+nSlices+" frames=1 unit="+units+" pixel_width="+px+" pixel_height="+py+" voxel_depth=1");
-	}
-	else
-		print(f, "Pixel size\t"+pw+"\t"+ph);	
+    //Remove dark regions
+    if(darkR) darkA = removeDarkR(imTitle);
+    
+    // Thresholding
+    run("Select None");
+    setSlice(round(nSlices/2));
+    setAutoThreshold("Minimum");  
+    call("ij.plugin.frame.ThresholdAdjuster.setMethod","Minimum");
+    waitForUser(setThr);
+    getThreshold(minth, maxth);
+    setThreshold(minth,maxth);
+    
+    // WRITE Threshold
+    print(f, "Threshold\t"+minth+"\t"+maxth);
+    
+    if(darkR) print(f, "DarkR\t" + darkA[0] +"\t"+ darkA[1]);
+    else print(f, "DarkR\t" + 0 +"\t"+ 0);
+    
+    roiManager("Show All without labels");
+    roiManager("Show None");
+    
+    // Particle Analysis (Tracking)
+    // 此时 ROI Manager 应该是空的，只会被用来存放小鼠轨迹
+    SEpoints = makeAnalysis(stagger, fps, mCubeArea);
+    
+    // WRITE Analysis Metadata
+    print(f, "staggerPoints\t" + SEpoints[0] +"\t"+ SEpoints[1]);
+    
+    if(fps == fpsOri) totalslices = SEpoints[1] - SEpoints[0];
+    else totalslices = round((SEpoints[1] - SEpoints[0])/ (100/fps));
+    
+    print(f, "fpsOri\t" + fpsOri);
+    
+    // Save Mouse ROIs
+    roiManager("Show All without labels");
+    roiManager("Show None");
+    roiManager("Save", dir + imTitle + "ROIs.zip");
+    
+    // Write Preferences
+    writePreferences(f);
+    
+    // --- 6. CLOSE FILE (CRITICAL) ---
+    File.close(f); 
 
-	/*Asks the user to adjust ovals to the regions, gets their location and dimensions
-	and prints them to file*/	
-	Array.fill(rectCoord, 0);
-	if(nRegions>0){
-		for(i=0; i < nRegions; i++){
-			makeOval(width/2, height/2,width/10,height/10);
-			waitForUser("Please set region n." + (i + 1));
-			getSelectionBounds(rectCoord[0], rectCoord[1], rectCoord[2], rectCoord[3]);
-			print(f,"Object"+(i+1)+"\t"+rectCoord[0]+"\t"+rectCoord[1]+"\t"+ rectCoord[2]+"\t"+rectCoord[3]);
-		}
-	}
-
-	
-	//Remove dark regions if so selected
-	if(darkR)
-		darKA = removeDarkR(imTitle);
-	
-	/*Set autothreshold method with Minum and get the input from the user
-regarding it. Also save the threshold to file*/
-	run("Select None");
-	setSlice(round(nSlices/2));
-	setAutoThreshold("Minimum");
-	call("ij.plugin.frame.ThresholdAdjuster.setMethod","Minimum");
-	waitForUser(setThr);
-	getThreshold(minth, maxth);
-	setThreshold(minth,maxth);
-	print(f, "Threshold\t" + minth + "\t" + maxth);
-	
-	/*If remove dark regions was selected save the parameters to file
-	This is here to maintain the order of the file to enable previous analysis to function*/
-	if(darkR)
-		print(f, "DarkR\t" + darKA[0] + "\t" + darKA[1]);
-	else
-		print(f, "DarkR\t" + 0 + "\t" + 0);
-	
-	roiManager("Show All without labels");
-	roiManager("Show None");
-
-	//analyse particles function
-	SEpoints = makeAnalysis(stagger, fps, mCubeArea);
-	print(f, "staggerPoints\t" + SEpoints[0] +"\t"+ SEpoints[1]);
-	if(fps == fpsOri)
-		totalslices = SEpoints[1] - SEpoints[0];
-	else
-		totalslices = round((SEpoints[1] - SEpoints[0])/ (100/fps));
-		
-	//Save the original fps of the file
-	print(f, "fpsOri\t" + fpsOri);
-	
-	roiManager("Show All without labels");
-	roiManager("Show None");
-	//Save ROIs to a file in the folder of the image
-	roiManager("Save", dir + imTitle + "ROIs.zip");
-	
-	//Write preferences to the file of the analysis
-	writePreferences(f);
-	//File operations done!
-	File.close(f);
-	run("Select None");
-
-	oriID=getImageID();
-	getParametersRT(fps, dir, imTitle, nRegions, totalslices);
-	dialog2(oriID, dir, imTitle, 4);
-	
+    // --- 7. FINAL OUTPUT ---
+    run("Select None");
+    oriID=getImageID();
+    
+    // 现在 ROI Manager 里只有小鼠轨迹，没有静态物体，计算不会卡死
+    getParametersRT(fps, dir, imTitle, nRegions, totalslices); 
+    dialog2(oriID, dir, imTitle, 4);
 }
 
 /*This function goes through the ROIs, creates and fills arrays with the
@@ -2278,50 +2291,59 @@ function getDirectionRT(dir, imTitle, n){
  
 }
 
-/*Function to see if the mouse is near a region of interest or not
-Inputs: xp, yp - ROI coordinates
+/*Function to see if the mouse is inside the rectangular region of interest
+Inputs: 
+xp, yp - ROI coordinates (mouse contour)
 xc, yc - mouse center of mass
 headC - array position of mouse head
-n - number of regions*/
+n - number of regions (0 for Object1, 1 for Object2...)
+*/
 function sortRegions(xp, yp, xc, yc, headC, dir, imTitle, n){
-	//Results array
-	temp = newArray(2);
-	Array.fill(temp, 0);
-	//get the region from file
-	regArray = getFileData(6+n, dir, imTitle, 4);
-	
-	//calculate center of oval and ratio
-	radius = (regArray[2] + regArray[3])/4;
-	centerX = regArray[0] + (regArray[2]/2);
-	centerY = regArray[1] + (regArray[3]/2);
-	
-	//Calculate distance from center of region to center of mass of mouse
-	dist = calculateDistance(centerX, centerY, xc, yc);
-	
-	/*check if the mouse is close to the regions
-	If the center of mouse is further away then 6 radius don�t bother*/
-	if(dist < radius * 6){
-		/*Calculate the distance of the head to the regions*/
-		dist = calculateDistance(centerX,centerY,xp[headC],yp[headC]);
-		if(dist <= radius * 2){
-			temp[0] = 1;
-		/*Calculate the distance of all the other regions of the mouse to 
-		see if they are near the region or not*/
-		}else{
-			for(i = 0; i < xp.length; i++){
-				dist = calculateDistance(centerX,centerY,xp[i],yp[i]);
-				if(dist <= radius * 2){
-					temp[1] = 1;
-					i = lengthOf(xp);
-				}
-			}
-		}
-	}
-	
+    // Results array: temp[0] for Head, temp[1] for Body
+    temp = newArray(2);
+    Array.fill(temp, 0);
+    
+    // 1. Get the object region from file
+    // regArray structure: [x, y, width, height]
+    regArray = getFileData(6+n, dir, imTitle, 4);
+    
+    // Define Rectangle Boundaries (Left, Right, Top, Bottom)
+    rectX1 = regArray[0];
+    rectY1 = regArray[1];
+    rectX2 = regArray[0] + regArray[2];
+    rectY2 = regArray[1] + regArray[3];
 
-	return temp;
-	
-	
+    // --- 2. Check HEAD (temp[0]) ---
+    // Get head coordinates
+    hX = xp[headC];
+    hY = yp[headC];
+    
+    // Logic: Is head X between Left/Right AND head Y between Top/Bottom?
+    if (hX >= rectX1 && hX <= rectX2 && hY >= rectY1 && hY <= rectY2) {
+        temp[0] = 1; // Yes, Head is strictly inside the rectangle
+    }
+
+    // --- 3. Check BODY (temp[1]) ---
+    // Option A: Check if ANY part of the mouse body contour is inside (Standard)
+    for(i = 0; i < xp.length; i++){
+        pX = xp[i];
+        pY = yp[i];
+        
+        if (pX >= rectX1 && pX <= rectX2 && pY >= rectY1 && pY <= rectY2) {
+            temp[1] = 1; // Yes, part of the body is inside
+            i = xp.length; // Break loop, no need to check further
+        }
+    }
+    
+    /* Option B: If you ONLY want to check the Center of Mass (Centroid)
+       Uncomment lines below and comment out Option A loop if you prefer this strictness
+    
+    if (xc >= rectX1 && xc <= rectX2 && yc >= rectY1 && yc <= rectY2) {
+        temp[1] = 1;
+    }
+    */
+
+    return temp;
 }
 
 
@@ -3714,7 +3736,9 @@ function lineTrack(imageID, dir, imTitle, option){
 			count = countLinesStartingWith(dir, imTitle, option, "Object");
 			for(k = 6, j = 1; k < (6+count); k++,j++){
 				array = getFileData(k, dir, imTitle, option);
-				drawOval(array[0], array[1], array[2], array[3]);
+		// --- FIX: Draw Rectangle instead of Oval ---
+				drawRect(array[0], array[1], array[2], array[3]);
+                // -------------------------------------------
 				drawString(toString(j), (array[0]+array[2]/2)-3, array[1]+array[3]/2);
 			}
 		}
@@ -3896,7 +3920,9 @@ function heatMap(imageID, dir, imTitle, option){
 			count = countLinesStartingWith(dir, imTitle, option, "Object");
 			for(k = 6, j = 1; k < (6+count); k++, j++){
 				array = getFileData(k, dir, imTitle, option);
-				drawOval(array[0], array[1], array[2], array[3]);
+		// --- FIX: Draw Rectangle instead of Oval ---
+				drawRect(array[0], array[1], array[2], array[3]);
+                // -------------------------------------------
 				drawString(toString(j), (array[0]+array[2]/2)-3, array[1]+array[3]/2);
 			}
 		}
@@ -4071,7 +4097,7 @@ function removeDarkR(imTitle){
 	temp = newArray(2);
 	run("Select None");
 	setBatchMode("show");
-	showMessage("Stack shading Processing","<html>"+"<font size=2><center>Please select the starting and end point<br>"+"<font size=2><center>of the stack to create a shading correction.<br>" + "<font size=2><center>Ideally you want frames where the mouse isn�t present yet (minimum 50 frames)<br>" + "<font size=2><center>If you have to use frames with mice in use as many as possible (>1000)<br><br>");
+	showMessage("Stack shading Processing","<html>"+"<font size=2><center>Please select the starting and end point<br>"+"<font size=2><center>of the stack to create a shading correction.<br>" + "<font size=2><center>Ideally you want frames where the mouse isn t present yet (minimum 50 frames)<br>" + "<font size=2><center>If you have to use frames with mice in use as many as possible (>1000)<br><br>");
 	waitForUser("Please select the inital frame to start the averaging");
 	temp[0] = getSliceNumber();
 	waitForUser("Please select the final frame to start the averaging");
@@ -4255,7 +4281,7 @@ function fearRedo(temp, option){
 		if(File.exists(dir + imName + "ROIs.zip"))
 			roiManager("Open", dir + imName + "ROIs.zip");
 		else
-			exit("Roi�s file appears to not exist!");
+			exit("Roi s file appears to not exist!");
 		if(option == 1){
 			//Get data of the dectetions
 			freezeCheck(fps, dir, imName, staggerS);
@@ -4347,7 +4373,7 @@ function tyRedo(temp, option){
 		if(File.exists(dir + imName + "ROIs.zip"))
 			roiManager("Open", dir + imName + "ROIs.zip");
 		else
-			exit("Roi�s file appears to not exist!");
+			exit("Roi s file appears to not exist!");
 		if(option == 1){
 			//Get data of the dectetions
 			getParametersTY(fps, dir, imName, staggerS);
@@ -4443,7 +4469,7 @@ function objectsRedo(temp, option){
 		if(File.exists(dir + imName + "ROIs.zip"))
 			roiManager("Open", dir + imName + "ROIs.zip");
 		else
-			exit("Roi�s file appears to not exist!");
+			exit("Roi s file appears to not exist!");
 		if(option == 1){
 			//Get data of the dectetions
 			getParametersRT(fps, dir, imName, nRegions, totalslices);
@@ -4519,7 +4545,7 @@ function swimRedo(temp, option){
 		if(File.exists(dir + imName + "ROIs.zip"))
 			roiManager("Open", dir + imName + "ROIs.zip");
 		else
-			exit("Roi�s file appears to not exist!");
+			exit("Roi s file appears to not exist!");
 		if(option == 1){
 			//Get data of the dectetions
 			getParametersSM(fps,dir, imName, diameter, staggerS);
@@ -4614,7 +4640,7 @@ function crossRedo(temp, option){
 		if(File.exists(dir + imName + "ROIs.zip"))
 			roiManager("Open", dir + imName + "ROIs.zip");
 		else
-			exit("Roi�s file appears to not exist!");
+			exit("Roi s file appears to not exist!");
 		if(option == 1){
 			//Get data of the dectetions
 			toUnscaled(armsL);
@@ -4701,7 +4727,7 @@ function cubeRedo(temp, option){
 		if(File.exists(dir + imName + "ROIs.zip"))
 			roiManager("Open", dir + imName + "ROIs.zip");
 		else
-			exit("Roi�s file appears to not exist!");
+			exit("Roi s file appears to not exist!");
 		if(option == 1){
 			//Get data of the dectetions
 			getParameters(fps, dir, imName, totalslices);
@@ -5031,7 +5057,7 @@ function movingAverage(window, array){
 }
 
 /*Get the frame rate of the image from the Info data
-If it doesn�t find it it asks for the user to input it or just use the 25fps one*/
+If it doesn t find it it asks for the user to input it or just use the 25fps one*/
 function getFrameRate(){
 	info = getImageInfo();
 	index1 = indexOf(info, "Frame rate: ");
