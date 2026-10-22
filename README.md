@@ -1,4 +1,6 @@
 # MouBeAT
+############# Leorio183 modified this macro script, the updated scripts are MouBeAT_modified_plotalso_onlyinsideROI.ijm and MouBeAT_modified_OFT.ijm#########################
+#############Supports rectangular ROI: for the area set by the ROI, only the region inside it is calculated, rather than additionally calculating a ring of radius R around it as the original script does. In addition, when a field is selected during OFT analysis, the software by default widens it slightly and also includes the content within the slightly widened video area in the analysis; if a 2x2 OFT field is used and there is a mouse in the adjacent chamber, the problem of tracking multiple subjects will occur.##################################
 
  Toolbox for mouse behavioural analysis of several maze types:
  Open Field; Elevated Plus Maze; Morris Water Maze; Y Maze
